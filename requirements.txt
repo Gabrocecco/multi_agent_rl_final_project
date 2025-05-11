@@ -1,0 +1,14 @@
+
+---
+
+```txt
+# Extra dependencies for Overcooked-RL project
+jupyter
+matplotlib
+tqdm
+opencv-python
+pygame
+scipy
+dill
+ipywidgets
+gymnasium
