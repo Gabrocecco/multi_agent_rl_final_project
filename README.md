@@ -13,3 +13,11 @@ We recommend using **Conda** to create a clean environment with Python 3.10, whi
 ```bash
 git clone https://github.com/HumanCompatibleAI/overcooked_ai.git
 cd overcooked_ai
+
+conda create -n overcooked-rl python=3.10 -y
+conda activate overcooked-rl
+
+pip install -e .[harl]
+
+cd ../your-overcooked-rl-project
+pip install -r requirements.txt
