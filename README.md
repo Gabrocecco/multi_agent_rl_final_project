@@ -1,14 +1,12 @@
-# Overcooked-RL: Cooperative Multi-Agent Reinforcement Learning
+# Overcooked-RL: Cooperative Multi-Agent RL in Overcooked-AI
 
-This project contains PPO-based reinforcement learning experiments on the [Overcooked-AI](https://github.com/HumanCompatibleAI/overcooked_ai) benchmark, focusing on cooperation and generalization across multiple kitchen layouts.
+This project explores layout and partner generalization using PPO (Proximal Policy Optimization) with TensorFlow in the Overcooked-AI benchmark.
 
 ---
 
-## 🛠️ Environment Setup
+## 🛠️ Setup Instructions
 
-We recommend using **Conda** to create a clean environment with Python 3.10, which is required for the `overcooked_ai` package.
-
-### 1. Clone the Overcooked-AI environment
+### 1. Clone Overcooked-AI (required dependency)
 
 ```bash
 git clone https://github.com/HumanCompatibleAI/overcooked_ai.git
@@ -19,5 +17,22 @@ conda activate overcooked-rl
 
 pip install -e .[harl]
 
-cd ../your-overcooked-rl-project
+cd path/to/your/overcooked_rl
 pip install -r requirements.txt
+
+cd path/to/your/overcooked_rl
+python -m training.train_selfplay
+
+
+overcooked_rl/
+│
+├── env/                      # Multi-layout wrapper (Gym-like)
+│   └── generalized_env.py
+├── agents/                   # Custom PPO agent (TensorFlow)
+│   └── ppo_tf.py
+├── training/                 # Training scripts (e.g., self-play, generalization)
+│   └── train_selfplay.py
+├── notebooks/                 # Jupyter notebooks for debugging, visualization
+│   └── overcooked_starter.ipynb
+├── requirements.txt
+└── README.md

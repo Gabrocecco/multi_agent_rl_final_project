@@ -1,8 +1,14 @@
 import random
 from overcooked_ai_py.mdp.overcooked_env import OvercookedEnv, Overcooked
 from overcooked_ai_py.mdp.overcooked_mdp import OvercookedGridworld
-import gym
+import gymnasium as gym
 import numpy as np
+
+# This class is a wrapper for the Overcooked environment that allows for
+# generalized training across multiple layouts. It randomly selects a layout
+# from a list of layouts each time the environment is reset. This is useful
+# for training agents in a more diverse set of scenarios, which can help
+# improve their generalization capabilities.
 
 class GeneralizedOvercooked:
     def __init__(self, layouts, info_level=0, horizon=400):

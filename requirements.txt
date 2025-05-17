@@ -1,14 +1,9 @@
-
----
-
-```txt
 # Extra dependencies for Overcooked-RL project
-jupyter
+tensorflow==2.19.0
+numpy
 matplotlib
 tqdm
+gymnasium
 opencv-python
 pygame
-scipy
-dill
-ipywidgets
-gymnasium
+jupyter
