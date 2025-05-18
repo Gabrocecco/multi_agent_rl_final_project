@@ -92,9 +92,13 @@ class ValueNetwork(tf.keras.Model):
         return self.model(inputs)
 
 class PPOAgent:
-    def __init__(self, obs_dim, act_dim, gamma=0.99, clip_ratio=0.2, lr=1e-4, arch_variant='baseline'):
+    def __init__(self, obs_dim, act_dim, gamma=0.99, clip_ratio=0.2, lr=2.5e-4,
+                 arch_variant='baseline', use_reward_shaping=True, use_decay=True):
         self.gamma = gamma
         self.clip_ratio = clip_ratio
+        self.use_reward_shaping = use_reward_shaping
+        self.use_decay = use_decay
+
         if arch_variant == 'conv':
             self.policy = ConvPolicyNetwork(obs_dim, act_dim)
             self.value = ConvValueNetwork(obs_dim)
@@ -106,6 +110,7 @@ class PPOAgent:
 
         print(f"\nInitialized PPO agent with architecture: {arch_variant}")
         print(f"obs_dim={obs_dim}, act_dim={act_dim}, gamma={gamma}, clip_ratio={clip_ratio}, lr={lr}")
+        print(f"use_reward_shaping={use_reward_shaping}, use_decay={use_decay}")
 
     def select_action(self, obs):
         obs = tf.convert_to_tensor(obs[None, :], dtype=tf.float32)
