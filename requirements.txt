@@ -7,3 +7,5 @@ gymnasium
 opencv-python
 pygame
 jupyter
+pandas 
+pillow
