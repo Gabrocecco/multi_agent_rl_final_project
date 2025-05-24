@@ -1,280 +1,203 @@
-from env.generalized_env import GeneralizedOvercooked
-from agents.ppo_tf import PPOAgent
-import numpy as np
-import tensorflow as tf
 import os
 import csv
-
-import imageio
-from PIL import Image
-import pygame
-# === Evaluate policy function  ===
-import imageio
+import numpy as np
 import tensorflow as tf
+import datetime
+from env.generalized_env import GeneralizedOvercooked
+from agents.ppo_tf import PPOAgent
+from training.evaluate_selfplay import evaluate_policy
 
-def evaluate_policy(agent, env, greedy=True, save_gif=False, gif_path="final_rollout.gif", steps = 400):
-    import imageio
+def train(
+    experiment_name="new_setup_15000",
+    layout_name='cramped_room',
+    network='deep',
+    use_shaping=True,
+    use_decay=True,
+    total_episodes=15000,
+    max_steps=400,
+    resume=False,
+    resume_episode=6000,
+    resume_tag = "PPO_deep_shaping-decay-6000_new_rl_final.weights.h5",  # senza ".weights.h5"
+    rollout_greedy=True,
+):
+    shaping_tag = "shaping" if use_shaping else "noshaping"
+    decay_tag = "decay" if use_decay else "nodecay"
+    tag = f"PPO_{network}_{shaping_tag}-{decay_tag}-{total_episodes}{experiment_name}"
 
-    obs = env.reset()
-    total_reward = 0
-    frames = []
-    # steps = 1000
+    log_dir = os.path.join(f"{layout_name}/logs")
+    checkpoint_dir = os.path.join(f"{layout_name}/checkpoints")
+    rollout_dir = os.path.join(f"{layout_name}/rollouts")
+    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    os.makedirs(rollout_dir, exist_ok=True)
 
-    print(f"\n--- Starting evaluation rollout (greedy = {greedy}) ---\n")
+    log_path = os.path.join(log_dir, f"train_log_{tag}.csv")
+    gif_path = os.path.join(rollout_dir, f"final_rollout_{tag}.gif")
 
-    for t in range(steps):
-        obs0 = obs['both_agent_obs'][0]
-        obs1 = obs['both_agent_obs'][1]
+    tb_log_dir = os.path.join("tensorboard_logs", f"{layout_name}_{tag}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}")
+    summary_writer = tf.summary.create_file_writer(tb_log_dir)
+    print(f"[TensorBoard] Logging at {tb_log_dir}")
 
-        # Select actions
-        if greedy:
-            logits0 = agent.policy(tf.convert_to_tensor([obs0], dtype=tf.float32))
-            logits1 = agent.policy(tf.convert_to_tensor([obs1], dtype=tf.float32))
-            a0 = tf.argmax(logits0[0]).numpy()
-            a1 = tf.argmax(logits1[0]).numpy()
-        else:
-            a0, _ = agent.select_action(obs0)
-            a1, _ = agent.select_action(obs1)
+    env = GeneralizedOvercooked([layout_name])
+    obs_dim = env.observation_space.shape[0]
+    act_dim = env.action_space.n
 
-        # Step
-        obs, reward, done, info = env.step([a0, a1])
-        total_reward += reward
+    print("\nTraining PPO agent on Overcooked")
+    print(f"Layout: {layout_name}, Obs dim: {obs_dim}, Action dim: {act_dim}")
 
-        # Log reward components
-        sparse = info.get("sparse_r_by_agent", [0, 0])
-        shaped = info.get("shaped_r_by_agent", [0, 0])
-        delivered = info.get("num_orders_delivered", None)
-        events = info.get("event_info", {})
-
-        if sum(sparse) > 0 or sum(shaped) > 0:
-            print(f"[STEP {t}] Sparse: {sparse} | Shaped: {shaped} | Delivered: {delivered}")
-            print(f"           Events: {events}")
-
-        # Render frame
-        if save_gif:
-            frame = env.envs[0].render()
-            frames.append(frame)
-
-        if done:
-            print("[Done] Environment signaled done.")
-            break
-
-    if save_gif and frames:
-        imageio.mimsave(gif_path, frames, fps=5)
-        print(f"\n✅ Saved final policy rollout as GIF: {gif_path}")
-
-    print(f"\n--- Evaluation complete ---\nTotal reward: {total_reward:.2f}\n")
-    return total_reward
-
-
-
-print("\n\n\n\n\n\n\nTraining PPO agent on Generalized Overcooked environment. "
-      "This is a self-play implementation where both agents share the same policy.")
-
-# === Environment setup ===
-layouts = ['cramped_room']
-env = GeneralizedOvercooked(layouts)
-print(f"Using {len(env.envs)} layouts: {layouts}")
-print(f"Observation space: {env.observation_space}")
-print(f"Action space: {env.action_space}")
-
-obs_dim = env.observation_space.shape[0]
-act_dim = env.action_space.n
-print(f"Observation dimension: {obs_dim}")
-print(f"Action dimension: {act_dim}")
-
-# === Agent setup ===
-network = "deep"
-use_shaping = True
-use_decay = True
-agent = PPOAgent(obs_dim=obs_dim, act_dim=act_dim, arch_variant=network,
-                 use_reward_shaping=use_shaping, use_decay=use_decay)
-print(f"Using the {network} network")
-
-# === Check for resume ===
-resume = True  # <-- Set to True to resume from checkpoint
-resume_episode = 6000
-if resume:
-    # checkpoint_path = f"checkpoints/policy_ep{resume_episode}.weights.h5"
-    checkpoint_path_policy = "/home/gabro/Desktop/AAS/final_project/overcooked_rl/checkpoints/policy_PPO_deep_shaping-decay-6000_new_rl_final.weights.h5"
-    checkpoint_path_value = "/home/gabro/Desktop/AAS/final_project/overcooked_rl/checkpoints/value_PPO_deep_shaping-decay-6000_new_rl_final.weights.h5"
-
-    if os.path.exists(checkpoint_path_policy):
-        # Costruisci i modelli
-        dummy_input = tf.random.uniform((1, obs_dim))
-        agent.policy(dummy_input)
-        agent.value(dummy_input)
-
-        # Carica i pesi
-        agent.policy.load_weights(checkpoint_path_policy)
-        # agent.value.load_weights(f"checkpoints/value_ep{resume_episode}.weights.h5")
-        agent.value.load_weights(checkpoint_path_value)
-
-        print(f"\nResumed training from checkpoint at episode {resume_episode}.")
-        start_episode = resume_episode
-    else:
-        print("\nCheckpoint not found. Starting from scratch.")
-        start_episode = 0
-else:
-    print("\nStarting from scratch.")
+    agent = PPOAgent(
+        obs_dim, act_dim,
+        arch_variant=network,
+        use_reward_shaping=use_shaping,
+        use_decay=use_decay,
+        clip_ratio=0.15,
+        lr=5e-4  
+    )
     start_episode = 0
+    if resume:
+        try:
+            dummy_input = tf.random.uniform((1, obs_dim))
+            agent.policy(dummy_input)
+            agent.value(dummy_input)
+            agent.policy.load_weights(os.path.join(checkpoint_dir, f"policy_{resume_tag}"))
+            agent.value.load_weights(os.path.join(checkpoint_dir, f"value_{resume_tag}"))
+            start_episode = resume_episode
+            print(f"Resumed from checkpoint at episode {resume_episode}")
+        except Exception as e:
+            print("Failed to load checkpoint:", e)
 
+    csv_header = [
+        "episode", "mean_reward", "total_reward", "decay_factor",
+        "shaped_reward_first_step", "sparse_reward_first_step", "evaluation_reward_greedy",
+        "moving_avg_train_reward"
+    ]
+    if not os.path.exists(log_path):
+        with open(log_path, mode="w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(csv_header)
 
-# === Training config ===
-n_episodes = 6000
-max_steps = 400
-print(f"Training for {n_episodes} episodes with max {max_steps} steps each.")
+    rolling_eval_rewards = []
+    best_eval = -float('inf')
 
-# === Define a unique tag for this experiment ===
-shaping_tag = "shaping" if use_shaping else "noshaping"
-decay_tag = "decay" if use_decay else "nodecay"
-tag = f"PPO_{network}_{shaping_tag}-{decay_tag}-{n_episodes}_new_rl"
+    for ep in range(start_episode, total_episodes):
+        obs = env.reset()
+        obs_batch, act_batch, old_probs, rewards, dones = [], [], [], [], []
 
-# === Logging setup ===
-log_dir = "logs"
-os.makedirs(log_dir, exist_ok=True)
-log_path = os.path.join(log_dir, f"train_log_{tag}.csv")
-if not os.path.exists(log_path):
-    print("Log file does not exist.... create one\n")
-    with open(log_path, mode="w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "episode", "mean_reward", "total_reward", "decay_factor",
-            "shaped_reward_first_step", "sparse_reward_first_step", "evaluation_reward_greedy"
-        ])
+        decay_factor = max(0.0, 1.0 - ep / 12000) if use_decay else 1.0
 
+        shaped_rewards, sparse_rewards = [], []
+        episode_reward = 0
+        first_shaped = None
+        first_sparse = None
 
-# === Training loop ===
-for ep in range(start_episode, n_episodes):
-    obs = env.reset()
-    obs_batch, act_batch, old_probs, rewards, dones = [], [], [], [], []
-    episode_reward = 0
-    action_counts = {i: 0 for i in range(act_dim)}
-    decay_factor = max(0.0, 1.0 - ep / n_episodes) if agent.use_decay else 1.0
-    first_shaped = None
-    first_sparse = None
-    dones_sparse_rewards = []
-    dones_shaped_rewards = []
-    for t in range(max_steps):
-        a0, p0 = agent.select_action(obs['both_agent_obs'][0])
-        a1, p1 = agent.select_action(obs['both_agent_obs'][1])
-        actions = [a0, a1]
-        action_counts[a0] += 1
+        for t in range(max_steps):
+            a0, p0 = agent.select_action(obs['both_agent_obs'][0])
+            a1, _ = agent.select_action(obs['both_agent_obs'][1])
+            actions = [a0, a1]
 
-        next_obs, reward_sparse, done, info = env.step(actions)
+            next_obs, reward_sparse, done, info = env.step(actions)
+            shaped = info.get('shaped_r_by_agent', [0, 0])[0]
 
-        shaped = info.get('shaped_r_by_agent', [0, 0])[0]
-        # scale = 5.0 if ep < 1000 else 2.5 if ep < 2000 else 1.0 # try 1
-        scale = 10.0 if ep < 1000 else 5.0 if ep < 3000 else 2.0
+            if ep < 2500:
+                scale = 10.0
+            elif ep < 6000:
+                scale = 5.0
+            else:
+                scale = 2.0
 
-        if agent.use_reward_shaping:
-            weighted_shaped = decay_factor * (shaped * scale)
-            total_reward = reward_sparse + weighted_shaped
-        else:
-            total_reward = reward_sparse
+            reward = reward_sparse + decay_factor * (shaped * scale) if use_shaping else reward_sparse
 
-        if t == 0:
-            first_shaped = shaped
-            first_sparse = reward_sparse
-            if ep % 10 == 0:
-                print(f"[Episode {ep}] Decay: {decay_factor:.2f} | Sparse: {reward_sparse:.2f} | Shaped: {shaped:.2f} | Total: {total_reward:.2f}")
+            if t == 0:
+                first_shaped = shaped
+                first_sparse = reward_sparse
 
-        obs_batch.append(obs['both_agent_obs'][0])
-        act_batch.append(a0)
-        old_probs.append(p0)
-        rewards.append(total_reward)
-        dones.append(done)
+            obs_batch.append(obs['both_agent_obs'][0])
+            act_batch.append(a0)
+            old_probs.append(p0)
+            rewards.append(reward)
+            dones.append(done)
 
-        obs = next_obs
-        episode_reward += total_reward
-        if done:
-            break
+            shaped_rewards.append(shaped * scale)
+            sparse_rewards.append(reward_sparse)
 
-        if agent.use_reward_shaping:
-            dones_sparse_rewards.append(reward_sparse)
-            dones_shaped_rewards.append(shaped * scale)
-        # print(f"Episode {ep+1}/{n_episodes}")
+            obs = next_obs
+            episode_reward += reward
 
-    # === Action distribution with readable labels ===
-    action_labels = {
-        0: "STAY",
-        1: "UP",
-        2: "DOWN",
-        3: "LEFT",
-        4: "RIGHT",
-        5: "INTERACT"
-    }
+            if done:
+                break
 
-    print("Action distribution:")
-    for action_id, count in action_counts.items():
-        label = action_labels.get(action_id, f"UNKNOWN_{action_id}")
-        print(f"  {label:8}: {count}")
+        print(f"Episode {ep+1}/{total_episodes} | Sparse: {sum(sparse_rewards)} | Shaped : {sum(shaped_rewards)} | Total: {episode_reward:.2f}")
 
-    # === Compute returns and update agent ===
-    last_value = agent.value(tf.convert_to_tensor([obs['both_agent_obs'][0]], dtype=tf.float32)).numpy()[0, 0]
-    returns = agent.compute_returns(rewards, dones, last_value)
-    agent.update(obs_batch, act_batch, old_probs, returns)
+        last_value = agent.value(tf.convert_to_tensor([obs['both_agent_obs'][0]], dtype=tf.float32)).numpy()[0, 0]
+        returns = agent.compute_returns(rewards, dones, last_value)
+        agent.update(obs_batch, act_batch, old_probs, returns)
 
-    # === Stats ===
-    mean_reward = np.mean(rewards)
-    total_sparse_reward = sum(dones_sparse_rewards) if agent.use_reward_shaping else sum(rewards)
-    total_shaped_reward = sum(dones_shaped_rewards) if agent.use_reward_shaping else 0.0
-    episode_reward = total_sparse_reward + total_shaped_reward
+        with open(log_path, mode="r") as f:
+            lines = f.readlines()
+        train_rewards = [float(l.split(',')[2]) for l in lines[1:]] if len(lines) > 1 else []
+        moving_avg_reward = np.mean(train_rewards[-100:]) if len(train_rewards) >= 100 else np.mean(train_rewards) if train_rewards else episode_reward
 
-    print(f"[Episode {ep}] Mean reward: {mean_reward:.2f}  Total reward: {episode_reward:.2f}")
-    if agent.use_reward_shaping:
-        print(f"  -> Total sparse reward: {total_sparse_reward:.2f}")
-        print(f"  -> Total shaped reward: {total_shaped_reward:.2f}")
+        eval_reward = 0.0
+        if (ep + 1) % 100 == 0:
+            eval_reward = evaluate_policy(agent, env, greedy=True)
+            rolling_eval_rewards.append(eval_reward)
+            if len(rolling_eval_rewards) > 10:
+                rolling_eval_rewards.pop(0)
+            mean_eval = np.mean(rolling_eval_rewards)
 
-    # === Evaluation ===
-    evaluation_reward = 0.0
-    if (ep + 1) % 100 == 0:
-        evaluation_reward = evaluate_policy(agent, env, greedy=True)
-        print(f"[Evaluation @ episode {ep+1}] Total reward (greedy policy): {evaluation_reward:.2f}")
+            if mean_eval >= 50:
+                print(f"\n✅ Early stopping at episode {ep+1}, mean greedy eval (last 10): {mean_eval:.2f}")
+                agent.policy.save_weights(os.path.join(checkpoint_dir, f"policy_{tag}_final.weights.h5"))
+                agent.value.save_weights(os.path.join(checkpoint_dir, f"value_{tag}_final.weights.h5"))
+                evaluate_policy(agent, env, greedy=rollout_greedy, max_steps=max_steps, save_gif=True, gif_path=gif_path)
+                print("Training stopped early (target reached!)")
+                # Best model always updated at final
+                if eval_reward > best_eval:
+                    best_eval = eval_reward
+                    agent.policy.save_weights(os.path.join(checkpoint_dir, f"policy_{tag}_best.weights.h5"))
+                    agent.value.save_weights(os.path.join(checkpoint_dir, f"value_{tag}_best.weights.h5"))
+                    print(f"Saved best model at episode {ep+1} (eval_reward={best_eval:.2f})")
+                return
 
-    # === Logging ===
-    with open(log_path, mode="a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            ep, mean_reward, episode_reward, decay_factor,
-            first_shaped, first_sparse, evaluation_reward
-        ])
+        with open(log_path, mode="a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                ep, np.mean(rewards), episode_reward, decay_factor,
+                first_shaped, first_sparse, eval_reward, moving_avg_reward
+            ])
 
-    # === Save model every 250 episodes ===
-    if (ep + 1) % 250 == 0:
-        save_dir = "checkpoints"
-        os.makedirs(save_dir, exist_ok=True)
-        agent.policy.save_weights(os.path.join(save_dir, f"policy_{tag}_ep{ep+1}.weights.h5"))
-        agent.value.save_weights(os.path.join(save_dir, f"value_{tag}_ep{ep+1}.weights.h5"))
-        print(f"\nCheckpoint saved at episode {ep+1}.")
+        with summary_writer.as_default():
+            tf.summary.scalar('Train/TotalReward', episode_reward, step=ep)
+            tf.summary.scalar('Train/MeanReward', np.mean(rewards), step=ep)
+            tf.summary.scalar('Train/DecayFactor', decay_factor, step=ep)
+            tf.summary.scalar('Train/ShapedFirst', first_shaped, step=ep)
+            tf.summary.scalar('Train/SparseFirst', first_sparse, step=ep)
+            if 'moving_avg_reward' in locals():
+                tf.summary.scalar('Train/MovingAvgReward', moving_avg_reward, step=ep)
+            if eval_reward > 0:
+                tf.summary.scalar('Eval/GreedyEvalReward', eval_reward, step=ep)
+            summary_writer.flush()
 
+        # --- CHECKPOINT & BEST MODEL ONLY EVERY 1000 ---
+        if (ep + 1) % 1000 == 0:
+            agent.policy.save_weights(os.path.join(checkpoint_dir, f"policy_{tag}_ep{ep+1}.weights.h5"))
+            agent.value.save_weights(os.path.join(checkpoint_dir, f"value_{tag}_ep{ep+1}.weights.h5"))
+            print(f"Saved checkpoint at episode {ep+1}")
+            # best model
+            if eval_reward > best_eval:
+                best_eval = eval_reward
+                agent.policy.save_weights(os.path.join(checkpoint_dir, f"policy_{tag}_best.weights.h5"))
+                agent.value.save_weights(os.path.join(checkpoint_dir, f"value_{tag}_best.weights.h5"))
+                print(f"Saved best model at episode {ep+1} (eval_reward={best_eval:.2f})")
 
-# === Save final model ===
-save_dir = "checkpoints"
-os.makedirs(save_dir, exist_ok=True)
-agent.policy.save_weights(os.path.join(save_dir, f"policy_{tag}_final.weights.h5"))
-agent.value.save_weights(os.path.join(save_dir, f"value_{tag}_final.weights.h5"))
+    # --- Final save if not stopped early ---
+    agent.policy.save_weights(os.path.join(checkpoint_dir, f"policy_{tag}_final.weights.h5"))
+    agent.value.save_weights(os.path.join(checkpoint_dir, f"value_{tag}_final.weights.h5"))
+    print("\nFinal model saved.")
 
+    evaluate_policy(agent, env, greedy=rollout_greedy, max_steps=max_steps, save_gif=True, gif_path=gif_path)
 
-print("\nFinal model weights saved in 'checkpoints/'")
+# Fine funzione train
 
-# === Final greedy rollout and save as GIF ===
-gif_path = f"final_rollout_{tag}.gif"
-greedy_status = False
-print(f"\nSimulating final policy (greedy = {greedy_status})...")
-# eval_reward = evaluate_policy(agent, env, greedy=False, save_gif=False, gif_path=gif_path, n_steps = max_steps)
-for i in range(1):
-    eval_reward = evaluate_policy(
-            agent,
-            env,
-            greedy=greedy_status,
-            save_gif=True,
-            gif_path="rollouts/final_run.gif",
-            steps = max_steps
-        )
-    print(f"Final greedy = {greedy_status} rollout total reward: {eval_reward:.2f}")
-    # if(eval_reward > 0):
-    #     print("REWARDDDDDDD\n\n\n")
-    #     break
-
-
+if __name__ == '__main__':
+    train()

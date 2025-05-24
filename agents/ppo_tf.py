@@ -92,8 +92,9 @@ class ValueNetwork(tf.keras.Model):
         return self.model(inputs)
 
 class PPOAgent:
-    def __init__(self, obs_dim, act_dim, gamma=0.99, clip_ratio=0.2, lr=2.5e-4,
-                 arch_variant='baseline', use_reward_shaping=True, use_decay=True):
+    # changed from clip_ratio=0.20 to clip_ratio=0.15
+    def __init__(self, obs_dim, act_dim, gamma=0.99, clip_ratio=0.15, lr=5e-4,
+                 arch_variant='deep', use_reward_shaping=True, use_decay=True):
         self.gamma = gamma
         self.clip_ratio = clip_ratio
         self.use_reward_shaping = use_reward_shaping
@@ -134,6 +135,19 @@ class PPOAgent:
         old_probs = tf.convert_to_tensor(old_probs, dtype=tf.float32)
         returns = tf.convert_to_tensor(returns, dtype=tf.float32)
 
+        # with tf.GradientTape() as tape:
+        #     logits = self.policy(obs_batch)
+        #     probs = tf.nn.softmax(logits)
+        #     action_probs = tf.gather(probs, act_batch[:, None], batch_dims=1)
+
+        #     ratio = action_probs[:, 0] / old_probs
+        #     clip_adv = tf.clip_by_value(ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
+        #     advantage = returns - tf.squeeze(self.value(obs_batch), axis=1)
+        #     policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantage, clip_adv * advantage))
+
+        #     value_loss = tf.reduce_mean(tf.square(returns - tf.squeeze(self.value(obs_batch), axis=1)))
+        #     loss = policy_loss + 0.5 * value_loss
+
         with tf.GradientTape() as tape:
             logits = self.policy(obs_batch)
             probs = tf.nn.softmax(logits)
@@ -144,8 +158,14 @@ class PPOAgent:
             advantage = returns - tf.squeeze(self.value(obs_batch), axis=1)
             policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantage, clip_adv * advantage))
 
+            # Value loss
             value_loss = tf.reduce_mean(tf.square(returns - tf.squeeze(self.value(obs_batch), axis=1)))
-            loss = policy_loss + 0.5 * value_loss
+
+            # Entropy bonus (to encourage exploration)
+            entropy = -tf.reduce_mean(tf.reduce_sum(probs * tf.math.log(probs + 1e-8), axis=1))
+            entropy_coeff = 0.01  # puoi aumentare o diminuire (0.01-0.05)
+            loss = policy_loss + 0.5 * value_loss - entropy_coeff * entropy
+
 
         grads = tape.gradient(loss, self.policy.trainable_variables + self.value.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.policy.trainable_variables + self.value.trainable_variables))
