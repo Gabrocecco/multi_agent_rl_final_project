@@ -8,7 +8,7 @@ from agents.ppo_tf import PPOAgent
 from training.evaluate_selfplay import evaluate_policy
 
 def train(
-    experiment_name="new_setup_15000_full_log_2",
+    experiment_name="new_setup_15000_no_entropy",
     layout_name='cramped_room',
     network='deep',
     use_shaping=True,

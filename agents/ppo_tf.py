@@ -104,9 +104,11 @@ class PPOAgent:
             self.policy = ConvPolicyNetwork(obs_dim, act_dim)
             self.value = ConvValueNetwork(obs_dim)
         else:
+            # using deep standard fully connected 2 layer network
             self.policy = PolicyNetwork(obs_dim, act_dim, variant=arch_variant)
             self.value = ValueNetwork(obs_dim, variant=arch_variant)
 
+        # we use Adam optimizer for the updates with learning rate lr 
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
         print(f"\nInitialized PPO agent with architecture: {arch_variant}")
@@ -164,6 +166,7 @@ class PPOAgent:
             # Entropy bonus (to encourage exploration)
             entropy = -tf.reduce_mean(tf.reduce_sum(probs * tf.math.log(probs + 1e-8), axis=1))
             entropy_coeff = 0.01  # puoi aumentare o diminuire (0.01-0.05)
+            # entropy_coeff = 0.0 # no entropy experiment 
             loss = policy_loss + 0.5 * value_loss - entropy_coeff * entropy
 
 
