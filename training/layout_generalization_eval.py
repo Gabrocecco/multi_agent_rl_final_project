@@ -7,13 +7,15 @@ import numpy as np
 test_layouts = [
     "cramped_room",
     "asymmetric_advantages",
-    "coordination_ring",
     "forced_coordination",
-    "counter_circuit_o_1order",
     ]
 
-policy_weights = "/home/gabro/Desktop/AAS/final_project/overcooked_rl/cramped_room/checkpoints/policy_PPO_deep_shaping-decay-15000new_setup_15000_full_log_2_final.weights.h5"
-value_weights  = "/home/gabro/Desktop/AAS/final_project/overcooked_rl/cramped_room/checkpoints/value_PPO_deep_shaping-decay-15000new_setup_15000_full_log_2_final.weights.h5"
+# test_layouts = [
+#     "forced_coordination"
+#     ]
+
+policy_weights = "/home/gabro/Desktop/AAS/final_project/overcooked_rl/multilayout_checkpoints/policy_PPO_deep_shaping-decay-20000multilayout_run_20000_final.weights.h5"
+value_weights  = "/home/gabro/Desktop/AAS/final_project/overcooked_rl/multilayout_checkpoints/value_PPO_deep_shaping-decay-20000multilayout_run_20000_final.weights.h5"
 
 results = []
 
@@ -57,7 +59,7 @@ for layout in test_layouts:
 
     rewards = []
     for i in range(N_RUNS):
-        gif_path=f"generalization/{layout}/eval_sampling.gif" if i == 0 else None
+        gif_path=f"generalization/{layout}/eval_sampling_20k_non_greedy.gif" if i == 0 else None
         reward = evaluate_policy(agent, env, greedy=False, save_gif=(i==0), gif_path=gif_path)
         rewards.append(reward)
     mean_reward = np.mean(rewards)
