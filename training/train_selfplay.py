@@ -8,26 +8,25 @@ from agents.ppo_tf import PPOAgent
 from training.evaluate_selfplay import evaluate_policy
 
 def train(
-    experiment_name="new_setup_15000_no_entropy",
-    layout_name='cramped_room',
+    experiment_name="multilayout_run_20000_resume",
     network='deep',
     use_shaping=True,
     use_decay=True,
-    total_episodes=15000,
+    total_episodes=20000,
     max_steps=400,
-    resume=False,
-    resume_episode=6000,
-    resume_tag = "PPO_deep_shaping-decay-6000_new_rl_final.weights.h5",
+    resume=True,
+    resume_episode=17300,
+    resume_tag = "PPO_deep_shaping-decay-20000multilayout_run_20000_final.weights.h5",
     rollout_greedy=True,
 ):
-    shaping_tag = "shaping" if use_shaping else "noshaping"
-    decay_tag = "decay" if use_decay else "nodecay"
-    tag = f"PPO_{network}_{shaping_tag}-{decay_tag}-{total_episodes}{experiment_name}"
+    # --- MULTI-LAYOUT SETUP ---
+    train_layouts = ["cramped_room", "asymmetric_advantages", "forced_coordination"]  # Cambia qui per i layout che vuoi!
+    tag = f"PPO_{network}_{'shaping' if use_shaping else 'noshaping'}-{'decay' if use_decay else 'nodecay'}-{total_episodes}{experiment_name}"
 
     # --- DIRS ---
-    log_dir = os.path.join(f"{layout_name}/logs")
-    checkpoint_dir = os.path.join(f"{layout_name}/checkpoints")
-    rollout_dir = os.path.join(f"{layout_name}/rollouts")
+    log_dir = "multilayout_logs"
+    checkpoint_dir = "multilayout_checkpoints"
+    rollout_dir = "multilayout_rollouts"
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(rollout_dir, exist_ok=True)
@@ -37,17 +36,17 @@ def train(
     log_path = os.path.join(log_dir, f"train_log_{tag}_{date_tag}.csv")
     gif_path = os.path.join(rollout_dir, f"final_rollout_{tag}.gif")
 
-    tb_log_dir = os.path.join("tensorboard_logs", f"{layout_name}_{tag}_{date_tag}")
+    tb_log_dir = os.path.join("tensorboard_logs", f"{tag}_{date_tag}")
     summary_writer = tf.summary.create_file_writer(tb_log_dir)
     print(f"[TensorBoard] Logging at {tb_log_dir}")
     print(f"[LOG] Writing CSV log to: {log_path}")
 
-    env = GeneralizedOvercooked([layout_name])
+    env = GeneralizedOvercooked(train_layouts)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
 
     print("\nTraining PPO agent on Overcooked")
-    print(f"Layout: {layout_name}, Obs dim: {obs_dim}, Action dim: {act_dim}")
+    print(f"Layouts: {train_layouts}, Obs dim: {obs_dim}, Action dim: {act_dim}")
 
     agent = PPOAgent(
         obs_dim, act_dim,
@@ -55,7 +54,7 @@ def train(
         use_reward_shaping=use_shaping,
         use_decay=use_decay,
         clip_ratio=0.15,
-        lr=5e-4  
+        lr=5e-4
     )
     start_episode = 0
     if resume:
@@ -72,7 +71,7 @@ def train(
 
     # Logging header
     csv_header = [
-        "episode", "mean_reward", "total_reward", "decay_factor",
+        "episode", "layout", "mean_reward", "total_reward", "decay_factor",
         "evaluation_reward_greedy_mean", "evaluation_reward_greedy_std", "moving_avg_train_reward",
         "total_shaped_reward", "total_sparse_reward",
         "moving_avg_shaped_reward", "moving_avg_sparse_reward"
@@ -86,12 +85,30 @@ def train(
     shaped_history = []
     sparse_history = []
     reward_history = []
+    layout_history = []
+
+    # === DIZIONARI DI STORIA PER MOVING AVG PER LAYOUT ===
+    layout_reward_history = {layout: [] for layout in train_layouts}
+    layout_shaped_history = {layout: [] for layout in train_layouts}
+    layout_sparse_history = {layout: [] for layout in train_layouts}
 
     for ep in range(start_episode, total_episodes):
         obs = env.reset()
+        # === Ottieni il layout attuale ===
+        if hasattr(env, "current_layout_name"):
+            current_layout = env.current_layout_name
+        elif hasattr(env, "envs") and hasattr(env.envs[0], "layout_name"):
+            current_layout = env.envs[0].layout_name
+        else:
+            current_layout = "unknown"
+        layout_history.append(current_layout)
+
         obs_batch, act_batch, old_probs, rewards, dones = [], [], [], [], []
 
-        decay_factor = max(0.0, 1.0 - ep / 12000) if use_decay else 1.0
+        # decay_factor = max(0.0, 1.0 - ep / 12000) if use_decay else 1.0
+        decay_total = 18000   # oppure 16000 o anche 20000 se vuoi una piccola coda
+        decay_factor = max(0.0, 1.0 - ep / decay_total) if use_decay else 1.0
+
 
         shaped_rewards, sparse_rewards = [], []
         episode_reward = 0
@@ -104,12 +121,21 @@ def train(
             next_obs, reward_sparse, done, info = env.step(actions)
             shaped = info.get('shaped_r_by_agent', [0, 0])[0]
 
-            if ep < 2500:
+            # if ep < 2500:
+            #     scale = 10.0
+            # elif ep < 6000:
+            #     scale = 5.0
+            # else:
+            #     scale = 2.0
+
+            if ep < 4000:
                 scale = 10.0
-            elif ep < 6000:
+            elif ep < 10000:
                 scale = 5.0
-            else:
+            elif ep < 16000:
                 scale = 2.0
+            else:
+                scale = 1.0
 
             reward = reward_sparse + decay_factor * (shaped * scale) if use_shaping else reward_sparse
 
@@ -128,19 +154,32 @@ def train(
             if done:
                 break
 
-        # --- Accumulo storia per moving avg ---
+        # --- Accumulo storia per moving avg (globale) ---
         total_shaped_reward = sum(shaped_rewards)
         total_sparse_reward = sum(sparse_rewards)
         shaped_history.append(total_shaped_reward)
         sparse_history.append(total_sparse_reward)
         reward_history.append(episode_reward)
 
-        # Moving avg su ultimi 100 episodi
+        # --- Accumulo storia per moving avg PER LAYOUT ---
+        layout_reward_history[current_layout].append(episode_reward)
+        layout_shaped_history[current_layout].append(total_shaped_reward)
+        layout_sparse_history[current_layout].append(total_sparse_reward)
+
+        # Moving avg su ultimi 100 episodi (globale)
         moving_avg_reward = np.mean(reward_history[-100:]) if len(reward_history) >= 100 else np.mean(reward_history)
         moving_avg_shaped = np.mean(shaped_history[-100:]) if len(shaped_history) >= 100 else np.mean(shaped_history)
         moving_avg_sparse = np.mean(sparse_history[-100:]) if len(sparse_history) >= 100 else np.mean(sparse_history)
 
-        print(f"Episode {ep+1}/{total_episodes} | Sparse: {total_sparse_reward} | Shaped: {total_shaped_reward} | Total: {episode_reward:.2f}")
+        # Moving avg per layout (ultimi 100)
+        layout_moving_avg_reward = {layout: np.mean(rews[-100:]) if len(rews) >= 100 else np.mean(rews)
+                                    for layout, rews in layout_reward_history.items()}
+        layout_moving_avg_shaped = {layout: np.mean(rews[-100:]) if len(rews) >= 100 else np.mean(rews)
+                                    for layout, rews in layout_shaped_history.items()}
+        layout_moving_avg_sparse = {layout: np.mean(rews[-100:]) if len(rews) >= 100 else np.mean(rews)
+                                    for layout, rews in layout_sparse_history.items()}
+
+        print(f"Episode {ep+1}/{total_episodes} | Layout: {current_layout} | Sparse: {total_sparse_reward} | Shaped: {total_shaped_reward} | Total: {episode_reward:.2f}")
 
         last_value = agent.value(tf.convert_to_tensor([obs['both_agent_obs'][0]], dtype=tf.float32)).numpy()[0, 0]
         returns = agent.compute_returns(rewards, dones, last_value)
@@ -162,25 +201,30 @@ def train(
                 rolling_eval_rewards.pop(0)
             mean_eval = np.mean(rolling_eval_rewards)
 
-            # Early stopping
-            if mean_eval >= 50:
-                print(f"\n✅ Early stopping at episode {ep+1}, mean greedy eval (last 10 evals): {mean_eval:.2f}")
-                agent.policy.save_weights(os.path.join(checkpoint_dir, f"policy_{tag}_final.weights.h5"))
-                agent.value.save_weights(os.path.join(checkpoint_dir, f"value_{tag}_final.weights.h5"))
-                evaluate_policy(agent, env, greedy=rollout_greedy, max_steps=max_steps, save_gif=True, gif_path=gif_path)
-                print("Training stopped early (target reached!)")
-                if eval_reward_mean > best_eval:
-                    best_eval = eval_reward_mean
-                    agent.policy.save_weights(os.path.join(checkpoint_dir, f"policy_{tag}_best.weights.h5"))
-                    agent.value.save_weights(os.path.join(checkpoint_dir, f"value_{tag}_best.weights.h5"))
-                    print(f"Saved best model at episode {ep+1} (eval_reward={best_eval:.2f})")
-                return
+            # Stampa anche le moving avg reward per layout
+            print("Moving average reward per layout (last 100):")
+            for layout in train_layouts:
+                print(f"  {layout}: {layout_moving_avg_reward[layout]:.2f}")
+
+            # # Early stopping
+            # if mean_eval >= 50:
+            #     print(f"\n✅ Early stopping at episode {ep+1}, mean greedy eval (last 10 evals): {mean_eval:.2f}")
+            #     agent.policy.save_weights(os.path.join(checkpoint_dir, f"policy_{tag}_final.weights.h5"))
+            #     agent.value.save_weights(os.path.join(checkpoint_dir, f"value_{tag}_final.weights.h5"))
+            #     evaluate_policy(agent, env, greedy=rollout_greedy, max_steps=max_steps, save_gif=True, gif_path=gif_path)
+            #     print("Training stopped early (target reached!)")
+            #     if eval_reward_mean > best_eval:
+            #         best_eval = eval_reward_mean
+            #         agent.policy.save_weights(os.path.join(checkpoint_dir, f"policy_{tag}_best.weights.h5"))
+            #         agent.value.save_weights(os.path.join(checkpoint_dir, f"value_{tag}_best.weights.h5"))
+            #         print(f"Saved best model at episode {ep+1} (eval_reward={best_eval:.2f})")
+            #     return
 
         # --- Logging CSV ---
         with open(log_path, mode="a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([
-                ep, np.mean(rewards), episode_reward, decay_factor,
+                ep, current_layout, np.mean(rewards), episode_reward, decay_factor,
                 eval_reward_mean, eval_reward_std, moving_avg_reward,
                 total_shaped_reward, total_sparse_reward,
                 moving_avg_shaped, moving_avg_sparse
@@ -198,6 +242,12 @@ def train(
             tf.summary.scalar('Train/MovingAvgSparseReward', moving_avg_sparse, step=ep)
             tf.summary.scalar('Eval/GreedyEvalReward', eval_reward_mean, step=ep)
             tf.summary.scalar('Eval/GreedyEvalStd', eval_reward_std, step=ep)
+            tf.summary.text('Layout', str(current_layout), step=ep)
+            # Log moving avg per layout
+            for layout in train_layouts:
+                tf.summary.scalar(f'Train/MovingAvgReward_{layout}', layout_moving_avg_reward[layout], step=ep)
+                tf.summary.scalar(f'Train/MovingAvgShaped_{layout}', layout_moving_avg_shaped[layout], step=ep)
+                tf.summary.scalar(f'Train/MovingAvgSparse_{layout}', layout_moving_avg_sparse[layout], step=ep)
             summary_writer.flush()
 
         # --- CHECKPOINT & BEST MODEL ONLY EVERY 1000 ---
