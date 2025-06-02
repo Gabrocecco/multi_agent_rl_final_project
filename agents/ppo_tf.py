@@ -1,72 +1,29 @@
 import tensorflow as tf
 import numpy as np
 
-# --- Network basate su convoluzione, utili se vuoi estrarre pattern locali dalle osservazioni ---
-
-class ConvPolicyNetwork(tf.keras.Model):
-    def __init__(self, input_shape, act_dim):
-        super().__init__()
-        # Reshape l'input vettoriale [batch, input_shape] in [batch, input_shape, 1] per usare Conv1D
-        self.reshape = tf.keras.layers.Reshape((input_shape, 1))
-        # Primo layer convoluzionale 1D con 32 filtri, kernel di ampiezza 5, attivazione ReLU
-        self.conv1d_1 = tf.keras.layers.Conv1D(32, kernel_size=5, activation='relu', padding='same')
-        # Secondo layer convoluzionale 1D con 64 filtri, kernel di ampiezza 3, attivazione ReLU
-        self.conv1d_2 = tf.keras.layers.Conv1D(64, kernel_size=3, activation='relu', padding='same')
-        # Appiattisce l'output (flatten) per connetterlo al fully connected
-        self.flatten = tf.keras.layers.Flatten()
-        # Densa fully connected con 128 unità e attivazione ReLU
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        # Layer di output: un neurone per ogni possibile azione
-        self.out = tf.keras.layers.Dense(act_dim)
-
-    def call(self, x):
-        # Definisce il forward pass: reshape -> conv1 -> conv2 -> flatten -> dense -> output
-        x = self.reshape(x)
-        x = self.conv1d_1(x)
-        x = self.conv1d_2(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        return self.out(x)
-
-class ConvValueNetwork(tf.keras.Model):
-    def __init__(self, input_shape):
-        super().__init__()
-        self.reshape = tf.keras.layers.Reshape((input_shape, 1))
-        self.conv1d_1 = tf.keras.layers.Conv1D(32, kernel_size=5, activation='relu', padding='same')
-        self.conv1d_2 = tf.keras.layers.Conv1D(64, kernel_size=3, activation='relu', padding='same')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        # Output a singolo valore: stima V(s)
-        self.out = tf.keras.layers.Dense(1)
-
-    def call(self, x):
-        x = self.reshape(x)
-        x = self.conv1d_1(x)
-        x = self.conv1d_2(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        return self.out(x)
-
-# --- Network fully connected (MLP), con possibili varianti di profondità e normalizzazione ---
+# Fully connected network, "deep" vairiant actually used in the project.
+# Two (almost) identical newforks: one for the policy, one for the value fucntion,
+# only differeing is the output layer size, which is the action space size for the policy (6 possible actions)
+# and 1 for the values funzion (the value of the state). 
 
 class PolicyNetwork(tf.keras.Model):
     def __init__(self, obs_dim, act_dim, variant='baseline'):
         super().__init__()
         if variant == 'baseline':
-            # MLP semplice: 1 hidden layer 128 -> output
+            # Simple MLP: 1 hidden layer
             self.model = tf.keras.Sequential([
                 tf.keras.layers.Dense(128, activation='relu'),
                 tf.keras.layers.Dense(act_dim)
             ])
         elif variant == 'deep':
-            # MLP più profondo: 256 -> 128 -> output
+            # Deeper MLP: 2 hidden layers
             self.model = tf.keras.Sequential([
                 tf.keras.layers.Dense(256, activation='relu'),
                 tf.keras.layers.Dense(128, activation='relu'),
                 tf.keras.layers.Dense(act_dim)
             ])
         elif variant == 'normalized':
-            # MLP profondo + layer di normalizzazione
+            # MLP with normalization
             self.model = tf.keras.Sequential([
                 tf.keras.layers.LayerNormalization(),
                 tf.keras.layers.Dense(256, activation='relu'),
@@ -76,8 +33,9 @@ class PolicyNetwork(tf.keras.Model):
         else:
             raise ValueError(f"Unknown architecture variant: {variant}")
 
+    # Forward pass through the network. 
+    # Inputs are the observations, output are the logits for each action.
     def call(self, inputs):
-        # Forward pass: input -> sequenza di layer
         return self.model(inputs)
 
 class ValueNetwork(tf.keras.Model):
@@ -104,86 +62,130 @@ class ValueNetwork(tf.keras.Model):
         else:
             raise ValueError(f"Unknown architecture variant: {variant}")
 
+    # Forward pass though the network. 
+    # Inputs are the observations, output is the value of the state.
     def call(self, inputs):
         return self.model(inputs)
+
 
 # --- PPO Agent ---
 
 class PPOAgent:
     # changed from clip_ratio=0.20 to clip_ratio=0.15
-    def __init__(self, obs_dim, act_dim, gamma=0.99, clip_ratio=0.15, lr=5e-4,
-                 arch_variant='deep', use_reward_shaping=True, use_decay=True):
-        self.gamma = gamma  # Discount factor per i reward futuri
-        self.clip_ratio = clip_ratio  # Epsilon per la funzione di clipping
-        self.use_reward_shaping = use_reward_shaping  # Flag per shaping reward
-        self.use_decay = use_decay  # Flag per eventuale learning rate decay
+    def __init__(self,
+                obs_dim,            # Dimension of the observation space
+                act_dim,            # Dimension of the action space (6 possibble actions)
+                gamma=0.99,         # Discount factor for future rewards
+                clip_ratio=0.15,    # Epsilon for the clipping function
+                lr=5e-4,            # Learning rate for the optimizer
+                arch_variant='deep',
+                use_reward_shaping=True,
+                use_decay=True
+                ):
+        self.gamma = gamma  
+        self.clip_ratio = clip_ratio  
+        self.use_reward_shaping = use_reward_shaping 
+        self.use_decay = use_decay  
 
-        # Inizializzazione delle reti, conv o fully connected
-        if arch_variant == 'conv':
-            self.policy = ConvPolicyNetwork(obs_dim, act_dim)
-            self.value = ConvValueNetwork(obs_dim)
-        else:
-            self.policy = PolicyNetwork(obs_dim, act_dim, variant=arch_variant)
-            self.value = ValueNetwork(obs_dim, variant=arch_variant)
+        self.policy = PolicyNetwork(obs_dim, act_dim, variant=arch_variant)
+        self.value = ValueNetwork(obs_dim, variant=arch_variant)
 
-        # Adam optimizer condiviso tra policy e value
+        # Adam optimizer shared between policy and value networks
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
 
         print(f"\nInitialized PPO agent with architecture: {arch_variant}")
         print(f"obs_dim={obs_dim}, act_dim={act_dim}, gamma={gamma}, clip_ratio={clip_ratio}, lr={lr}")
         print(f"use_reward_shaping={use_reward_shaping}, use_decay={use_decay}")
 
+    # Select an action based on the current observation.
+    # The action is sampled from the policy network's output logits.
     def select_action(self, obs):
-        # Prende in input una singola osservazione (dimensione [obs_dim])
-        obs = tf.convert_to_tensor(obs[None, :], dtype=tf.float32)  # La converte in batch di shape [1, obs_dim]
-        logits = self.policy(obs)  # Calcola logits della policy (prima del softmax)
-        probs = tf.nn.softmax(logits)  # Probabilità delle azioni tramite softmax
-        action = tf.random.categorical(logits, 1)[0, 0].numpy()  # Campiona un'azione dalle logits (distribuzione categoriale)
-        prob = probs[0, action].numpy()  # Probabilità associata all'azione scelta
-        return action, prob  # Restituisce azione e probabilità (serve per la loss PPO)
+        obs = tf.convert_to_tensor(obs[None, :], dtype=tf.float32)  # Convert to batch of shape [1, obs_dim]
+        logits = self.policy(obs)  # Compute logits from the policy network (before softmax)
+        probs = tf.nn.softmax(logits)  # Compute action probabilities via softmax
+        action = tf.random.categorical(logits, 1)[0, 0].numpy()  # Sample an action from the logits (non greedy sampling)
+        prob = probs[0, action].numpy()  # Probability associated with the chosen action
+        return action, prob  # Return action and its probability (needed for PPO loss)
 
+    # For each state visited during the episode, this function calculates the sum of all future rewards
+    # (discounted by gamma) that the agent will receive starting from that timestep until the end of the episode.
     def compute_returns(self, rewards, dones, last_value):
-        # Calcola i return-to-go (reward scontati), propagando da fine episodio a inizio
         returns = []
-        R = last_value  # Valore stimato dello stato terminale (per bootstrapping)
+        R = last_value 
         for r, d in zip(reversed(rewards), reversed(dones)):
-            R = r + self.gamma * R * (1. - d)  # Se done=1, resetta return
-            returns.insert(0, R)  # Inserisce in testa (ricostruendo ordine corretto)
-        return returns
+            R = r + self.gamma * R * (1. - d)  # If done == 1, reset return; otherwise, accumulate
+            returns.insert(0, R)  # Insert at the front to restore correct order
+        return returns  
 
-    def update(self, obs_batch, act_batch, old_probs, returns):
-        # Preprocessamento batch
-        obs_batch = tf.convert_to_tensor(obs_batch, dtype=tf.float32)
-        act_batch = tf.convert_to_tensor(act_batch, dtype=tf.int32)
-        old_probs = tf.convert_to_tensor(old_probs, dtype=tf.float32)
-        returns = tf.convert_to_tensor(returns, dtype=tf.float32)
+# Perform a single PPO update step for both policy and value networks.
 
-        with tf.GradientTape() as tape:
-            logits = self.policy(obs_batch)  # Calcola logits per tutte le osservazioni
-            probs = tf.nn.softmax(logits)  # Softmax per ottenere distribuzione azioni
-            action_probs = tf.gather(probs, act_batch[:, None], batch_dims=1)  # Probabilità delle azioni effettivamente scelte
+# This function implements the core Proximal Policy Optimization (PPO) update. Given a batch of trajectories
+# collected with the current policy, it:
+#   - Computes the new action probabilities and the ratio to the old policy.
+#   - Applies the PPO clipped surrogate objective to stabilize training.
+#   - Updates both the policy (actor) and the value function (critic) in a single backward pass.
 
-            # Calcola la ratio tra probabilità nuova e vecchia per PPO
-            ratio = action_probs[:, 0] / old_probs
-            # Applica il clipping
-            clip_adv = tf.clip_by_value(ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
-            # Calcola l'advantage empirico (return - value)
-            advantage = returns - tf.squeeze(self.value(obs_batch), axis=1)
-            # Loss PPO-CLIP: minimo tra ratio*advantage e clip*advantage
-            policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantage, clip_adv * advantage))
+# PPO update summary:
+#     1. For each (state, action) pair in the batch:
+#         - Calculate current policy probability π_θ(a|s)
+#         - Use stored old policy probability π_θ_old(a|s)
+#         - Compute the probability ratio:
+#             r(θ) = π_θ(a|s) / π_θ_old(a|s)
+#         - Compute the empirical advantage:
+#             A_t = G_t - V_θ(s_t)
+#               where G_t is the return-to-go for timestep t
 
-            # Value loss: errore quadratico tra returns e value stimato
-            value_loss = tf.reduce_mean(tf.square(returns - tf.squeeze(self.value(obs_batch), axis=1)))
+#     2. Policy loss (PPO-clip objective):
+#         L_clip(θ) = E_t [ min(r(θ) * A_t, clip(r(θ), 1 - ε, 1 + ε) * A_t) ]
+#         This prevents large, destabilizing updates to the policy.
 
-            # Entropy bonus: incentiva policy esplorative
-            entropy = -tf.reduce_mean(tf.reduce_sum(probs * tf.math.log(probs + 1e-8), axis=1))
-            entropy_coeff = 0.01  # Peso del termine di entropia (exploration bonus)
-            # Entropy coeff = 0.0 vuol dire no exploration bonus
+#     3. Value loss:
+#         L_vf(θ) = MSE(G_t, V_θ(s_t))
 
-            # Somma pesata di tutte le componenti della loss
-            loss = policy_loss + 0.5 * value_loss - entropy_coeff * entropy
+#     4. Entropy bonus (for exploration):
+#         S[π_θ](s) = -Σ_a π_θ(a|s) log π_θ(a|s)
 
-        # Calcola i gradienti rispetto a tutti i parametri (policy e value)
-        grads = tape.gradient(loss, self.policy.trainable_variables + self.value.trainable_variables)
-        # Applica i gradienti usando Adam
-        self.optimizer.apply_gradients(zip(grads, self.policy.trainable_variables + self.value.trainable_variables))
+#     5. Total loss:
+#         L_total = L_clip + c1 * L_vf - c2 * S[π_θ]
+def update(self,
+           obs_batch,   # Batch of observations (states) from the environment
+           act_batch,   # Batch of actions taken in those states
+           old_probs,   # Old action probabilities from the previous policy (used for PPO ratio)
+           returns  # Batch of returns (discounted future rewards) for the states in obs_batch
+           ):
+    
+    # Convert all input data to tensors with appropriate types
+    obs_batch = tf.convert_to_tensor(obs_batch, dtype=tf.float32)
+    act_batch = tf.convert_to_tensor(act_batch, dtype=tf.int32)
+    old_probs = tf.convert_to_tensor(old_probs, dtype=tf.float32)
+    returns = tf.convert_to_tensor(returns, dtype=tf.float32)
+
+    with tf.GradientTape() as tape:
+        logits = self.policy(obs_batch)  # Compute policy logits for all observations
+        probs = tf.nn.softmax(logits)    # Compute action probabilities via softmax
+        action_probs = tf.gather(probs, act_batch[:, None], batch_dims=1)  # Get the probabilities of the actions actually taken
+
+        # Compute the PPO ratio between new and old action probabilities
+        ratio = action_probs[:, 0] / old_probs
+        # Apply clipping to the ratio
+        clip_adv = tf.clip_by_value(ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
+        # Compute empirical advantage (returns - value prediction)
+        advantage = returns - tf.squeeze(self.value(obs_batch), axis=1)
+        # PPO-CLIP policy loss: minimum between unclipped and clipped objective
+        policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantage, clip_adv * advantage))
+
+        # Value loss: mean squared error between returns and value predictions
+        value_loss = tf.reduce_mean(tf.square(returns - tf.squeeze(self.value(obs_batch), axis=1)))
+
+        # Entropy bonus: encourages exploration by penalizing certainty
+        entropy = -tf.reduce_mean(tf.reduce_sum(probs * tf.math.log(probs + 1e-8), axis=1))
+        entropy_coeff = 0.01  # Weight for entropy bonus (set to 0.0 for no exploration bonus)
+
+        # Total loss: weighted sum of policy loss, value loss, and entropy bonus
+        loss = policy_loss + 0.5 * value_loss - entropy_coeff * entropy
+
+    # Compute gradients with respect to all trainable parameters (policy and value networks)
+    grads = tape.gradient(loss, self.policy.trainable_variables + self.value.trainable_variables)
+    # Apply gradients using Adam optimizer
+    self.optimizer.apply_gradients(zip(grads, self.policy.trainable_variables + self.value.trainable_variables))
+
