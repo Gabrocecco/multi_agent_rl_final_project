@@ -9,13 +9,13 @@ from training.evaluate_selfplay import evaluate_policy
 
 # Main training funcion, modify parameters as needed.
 def train(
-    experiment_name="multilayout_run_20000_demo_test",
+    experiment_name="multilayout_run_20000_demo_new_training",
     network='deep',
     use_shaping=True,
     use_decay=True,
     total_episodes=20000,
     max_steps=400,
-    resume=False,
+    resume=True,
     resume_episode=17300,
     resume_tag = "PPO_deep_shaping-decay-20000multilayout_run_20000_final.weights.h5",
     rollout_greedy=True,
@@ -25,9 +25,9 @@ def train(
     tag = f"PPO_{network}_{'shaping' if use_shaping else 'noshaping'}-{'decay' if use_decay else 'nodecay'}-{total_episodes}{experiment_name}"
 
     # --- DIRS ---
-    log_dir = "multilayout_logs"
-    checkpoint_dir = "multilayout_checkpoints"
-    rollout_dir = "multilayout_rollouts"
+    log_dir = "generalization/multilayout_logs"
+    checkpoint_dir = "generalization/multilayout_checkpoints"
+    rollout_dir = "generalization/multilayout_rollouts"
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(rollout_dir, exist_ok=True)
@@ -289,6 +289,8 @@ def train(
     agent.value.save_weights(os.path.join(checkpoint_dir, f"value_{tag}_final.weights.h5"))
     print("\nFinal model saved.")
 
+    # --- EVALUATION ---
+    print("\nEvaluating final policy...")
     evaluate_policy(agent, env, greedy=rollout_greedy, max_steps=max_steps, save_gif=True, gif_path=gif_path)
 
 if __name__ == '__main__':

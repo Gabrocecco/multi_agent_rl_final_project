@@ -117,75 +117,75 @@ class PPOAgent:
             returns.insert(0, R)  # Insert at the front to restore correct order
         return returns  
 
-# Perform a single PPO update step for both policy and value networks.
+    # Perform a single PPO update step for both policy and value networks.
 
-# This function implements the core Proximal Policy Optimization (PPO) update. Given a batch of trajectories
-# collected with the current policy, it:
-#   - Computes the new action probabilities and the ratio to the old policy.
-#   - Applies the PPO clipped surrogate objective to stabilize training.
-#   - Updates both the policy (actor) and the value function (critic) in a single backward pass.
+    # This function implements the core Proximal Policy Optimization (PPO) update. Given a batch of trajectories
+    # collected with the current policy, it:
+    #   - Computes the new action probabilities and the ratio to the old policy.
+    #   - Applies the PPO clipped surrogate objective to stabilize training.
+    #   - Updates both the policy (actor) and the value function (critic) in a single backward pass.
 
-# PPO update summary:
-#     1. For each (state, action) pair in the batch:
-#         - Calculate current policy probability π_θ(a|s)
-#         - Use stored old policy probability π_θ_old(a|s)
-#         - Compute the probability ratio:
-#             r(θ) = π_θ(a|s) / π_θ_old(a|s)
-#         - Compute the empirical advantage:
-#             A_t = G_t - V_θ(s_t)
-#               where G_t is the return-to-go for timestep t
+    # PPO update summary:
+    #     1. For each (state, action) pair in the batch:
+    #         - Calculate current policy probability π_θ(a|s)
+    #         - Use stored old policy probability π_θ_old(a|s)
+    #         - Compute the probability ratio:
+    #             r(θ) = π_θ(a|s) / π_θ_old(a|s)
+    #         - Compute the empirical advantage:
+    #             A_t = G_t - V_θ(s_t)
+    #               where G_t is the return-to-go for timestep t
 
-#     2. Policy loss (PPO-clip objective):
-#         L_clip(θ) = E_t [ min(r(θ) * A_t, clip(r(θ), 1 - ε, 1 + ε) * A_t) ]
-#         This prevents large, destabilizing updates to the policy.
+    #     2. Policy loss (PPO-clip objective):
+    #         L_clip(θ) = E_t [ min(r(θ) * A_t, clip(r(θ), 1 - ε, 1 + ε) * A_t) ]
+    #         This prevents large, destabilizing updates to the policy.
 
-#     3. Value loss:
-#         L_vf(θ) = MSE(G_t, V_θ(s_t))
+    #     3. Value loss:
+    #         L_vf(θ) = MSE(G_t, V_θ(s_t))
 
-#     4. Entropy bonus (for exploration):
-#         S[π_θ](s) = -Σ_a π_θ(a|s) log π_θ(a|s)
+    #     4. Entropy bonus (for exploration):
+    #         S[π_θ](s) = -Σ_a π_θ(a|s) log π_θ(a|s)
 
-#     5. Total loss:
-#         L_total = L_clip + c1 * L_vf - c2 * S[π_θ]
-def update(self,
-           obs_batch,   # Batch of observations (states) from the environment
-           act_batch,   # Batch of actions taken in those states
-           old_probs,   # Old action probabilities from the previous policy (used for PPO ratio)
-           returns  # Batch of returns (discounted future rewards) for the states in obs_batch
-           ):
-    
-    # Convert all input data to tensors with appropriate types
-    obs_batch = tf.convert_to_tensor(obs_batch, dtype=tf.float32)
-    act_batch = tf.convert_to_tensor(act_batch, dtype=tf.int32)
-    old_probs = tf.convert_to_tensor(old_probs, dtype=tf.float32)
-    returns = tf.convert_to_tensor(returns, dtype=tf.float32)
+    #     5. Total loss:
+    #         L_total = L_clip + c1 * L_vf - c2 * S[π_θ]
+    def update(self,
+            obs_batch,   # Batch of observations (states) from the environment
+            act_batch,   # Batch of actions taken in those states
+            old_probs,   # Old action probabilities from the previous policy (used for PPO ratio)
+            returns  # Batch of returns (discounted future rewards) for the states in obs_batch
+            ):
+        
+        # Convert all input data to tensors with appropriate types
+        obs_batch = tf.convert_to_tensor(obs_batch, dtype=tf.float32)
+        act_batch = tf.convert_to_tensor(act_batch, dtype=tf.int32)
+        old_probs = tf.convert_to_tensor(old_probs, dtype=tf.float32)
+        returns = tf.convert_to_tensor(returns, dtype=tf.float32)
 
-    with tf.GradientTape() as tape:
-        logits = self.policy(obs_batch)  # Compute policy logits for all observations
-        probs = tf.nn.softmax(logits)    # Compute action probabilities via softmax
-        action_probs = tf.gather(probs, act_batch[:, None], batch_dims=1)  # Get the probabilities of the actions actually taken
+        with tf.GradientTape() as tape:
+            logits = self.policy(obs_batch)  # Compute policy logits for all observations
+            probs = tf.nn.softmax(logits)    # Compute action probabilities via softmax
+            action_probs = tf.gather(probs, act_batch[:, None], batch_dims=1)  # Get the probabilities of the actions actually taken
 
-        # Compute the PPO ratio between new and old action probabilities
-        ratio = action_probs[:, 0] / old_probs
-        # Apply clipping to the ratio
-        clip_adv = tf.clip_by_value(ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
-        # Compute empirical advantage (returns - value prediction)
-        advantage = returns - tf.squeeze(self.value(obs_batch), axis=1)
-        # PPO-CLIP policy loss: minimum between unclipped and clipped objective
-        policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantage, clip_adv * advantage))
+            # Compute the PPO ratio between new and old action probabilities
+            ratio = action_probs[:, 0] / old_probs
+            # Apply clipping to the ratio
+            clip_adv = tf.clip_by_value(ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio)
+            # Compute empirical advantage (returns - value prediction)
+            advantage = returns - tf.squeeze(self.value(obs_batch), axis=1)
+            # PPO-CLIP policy loss: minimum between unclipped and clipped objective
+            policy_loss = -tf.reduce_mean(tf.minimum(ratio * advantage, clip_adv * advantage))
 
-        # Value loss: mean squared error between returns and value predictions
-        value_loss = tf.reduce_mean(tf.square(returns - tf.squeeze(self.value(obs_batch), axis=1)))
+            # Value loss: mean squared error between returns and value predictions
+            value_loss = tf.reduce_mean(tf.square(returns - tf.squeeze(self.value(obs_batch), axis=1)))
 
-        # Entropy bonus: encourages exploration by penalizing certainty
-        entropy = -tf.reduce_mean(tf.reduce_sum(probs * tf.math.log(probs + 1e-8), axis=1))
-        entropy_coeff = 0.01  # Weight for entropy bonus (set to 0.0 for no exploration bonus)
+            # Entropy bonus: encourages exploration by penalizing certainty
+            entropy = -tf.reduce_mean(tf.reduce_sum(probs * tf.math.log(probs + 1e-8), axis=1))
+            entropy_coeff = 0.01  # Weight for entropy bonus (set to 0.0 for no exploration bonus)
 
-        # Total loss: weighted sum of policy loss, value loss, and entropy bonus
-        loss = policy_loss + 0.5 * value_loss - entropy_coeff * entropy
+            # Total loss: weighted sum of policy loss, value loss, and entropy bonus
+            loss = policy_loss + 0.5 * value_loss - entropy_coeff * entropy
 
-    # Compute gradients with respect to all trainable parameters (policy and value networks)
-    grads = tape.gradient(loss, self.policy.trainable_variables + self.value.trainable_variables)
-    # Apply gradients using Adam optimizer
-    self.optimizer.apply_gradients(zip(grads, self.policy.trainable_variables + self.value.trainable_variables))
+        # Compute gradients with respect to all trainable parameters (policy and value networks)
+        grads = tape.gradient(loss, self.policy.trainable_variables + self.value.trainable_variables)
+        # Apply gradients using Adam optimizer
+        self.optimizer.apply_gradients(zip(grads, self.policy.trainable_variables + self.value.trainable_variables))
 
