@@ -31,12 +31,17 @@ cd overcooked_ai
 ```
 ### 2. Create and activate a dedicated environment
 Recommended to avoid version conflicts.
-If you don't use conda, you can use `python3.10 -m venv overcooked-rl`.
+
+With conda: 
 ```bash
 conda create -n overcooked-rl python=3.10 -y
 conda activate overcooked-rl
 ```
-
+Or with venv: 
+```bash
+python3.10 -m venv overcooked-rl
+source overcooked-rl/bin/activate
+```
 ### 3. Install Overcooked-AI (with Human-AI RL extras)
 The [harl] option installs all dependencies needed for RL experiments (including gym, pygame, etc).
 ```bash
@@ -44,9 +49,11 @@ pip install -e .[harl]
 ```
 
 ### 4. Install Overcooked-RL requirements
+Go back to this repo.
+
 This will install all Python dependencies for this repository (TensorFlow, numpy, etc).
 ```bash
-cd path/to/your/overcooked_rl
+cd path/to/this/repo
 pip install -r requirements.txt
 ```
 ### 5. Run a training script
