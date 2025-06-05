@@ -1,15 +1,12 @@
 # Experiments on layout generalizaion and reward shaping in Cooperative Multi-Agent Overcooked-AI environment
 
 In this work, we investigate if policies trained via self-play with Proximal Policy
-Optimization (PPO) can perfomr e well in multiple layouts and generalize to un-
-seen layouts in Overcooked-AI. Our experimental setup combines reward shaping
+Optimization (PPO) can perform well in multiple layouts and generalize to unseen layouts in Overcooked-AI. Our experimental setup combines reward shaping
 with a stepwise decay schedule and a deep neural policy architecture. We analyze
 the effect of entropy regularization and reward shaping on both learning efficiency
 and final policy performance.
 
 You can find the full project report [here](report.pdf).
-
----
 
 ## Example Replay
 
@@ -18,6 +15,8 @@ Below you can see a replay of two agents cooperating in the "cramped_room" layou
 ![Overcooked Replay](cramped_room/rollouts/final_rollout_PPO_deep_shaping-decay-15000new_setup_15000_full_log_2.gif)
 
 ## Training statistics plot of generalization experiment 
+
+Below you can see the learning curves of the generalizatione experiment in three different layouts: 
 ![Alt text](generalization/plot.png)
 
 
@@ -53,7 +52,6 @@ pip install -r requirements.txt
 ### 5. Run a training script
 Run the `demo.ipynb` notebook for evaluating the project model trained with gifs replays.
 This includes all the final results discussed in the report.  
-
 
 ### 6. Run a training script
 
