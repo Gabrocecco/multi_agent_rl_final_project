@@ -32,12 +32,12 @@ cd overcooked_ai
 ### 2. Create and activate a dedicated environment
 Recommended to avoid version conflicts.
 
-With conda: 
+With `conda`: 
 ```bash
 conda create -n overcooked-rl python=3.10 -y
 conda activate overcooked-rl
 ```
-Or with venv: 
+Or with `venv`: 
 ```bash
 python3.10 -m venv overcooked-rl
 source overcooked-rl/bin/activate
@@ -56,19 +56,26 @@ This will install all Python dependencies for this repository (TensorFlow, numpy
 cd path/to/this/repo
 pip install -r requirements.txt
 ```
-### 5. Run a training script
+### 5. Run the demo!
 Run the `demo.ipynb` notebook for evaluating the project model trained with gifs replays.
-This includes all the final results discussed in the report.  
 
+Run: 
+```bash
+jupyter notebook
+```
+and then select and run cells in `demo.ipynb`.
+
+This includes all the final results discussed in the report, and replay GIFs of episodes. 
 ### 6. Run a training script
 
 You can run a new training or resume a previus one with PPO using the provided script.
 Change script parameters as needed inside `training/train_selfplay.py`.
 ```bash
-cd path/to/your/overcooked_rl
 python -m training.train_selfplay
 ```
+The training was monitored with `Tensorboard`, and with `.csv` file for plotting results. The logging in on by default. 
 
+### Project Structure 
 ```text
 overcooked_rl/
 │
